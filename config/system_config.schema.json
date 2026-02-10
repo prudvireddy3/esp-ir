@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/esp-ir/system_config.schema.json",
+  "title": "ESP-IR System Config",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "system",
+    "network",
+    "mqtt",
+    "ui",
+    "homes",
+    "features",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "system": {
+      "type": "object",
+      "required": ["device_id", "timezone", "ntp_servers", "boot_fail_limit", "safe_mode_enabled"],
+      "properties": {
+        "device_id": { "type": "string", "minLength": 1 },
+        "timezone": { "type": "string", "minLength": 1 },
+        "ntp_servers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "boot_fail_limit": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "safe_mode_enabled": { "type": "boolean" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "required": ["wifi"],
+      "properties": {
+        "wifi": {
+          "type": "object",
+          "required": ["ssid", "password", "ap_disable_after_setup", "reconnect_interval_sec"],
+          "properties": {
+            "ssid": { "type": "string" },
+            "password": { "type": "string" },
+            "ap_disable_after_setup": { "type": "boolean" },
+            "reconnect_interval_sec": { "type": "integer", "minimum": 1, "maximum": 3600 }
+          }
+        }
+      }
+    },
+    "mqtt": {
+      "type": "object",
+      "required": ["enabled", "broker", "port", "base_topic", "ha_discovery", "retain"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "broker": { "type": "string" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "base_topic": { "type": "string", "minLength": 1 },
+        "ha_discovery": { "type": "boolean" },
+        "retain": { "type": "boolean" }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "required": ["oled", "buttons"],
+      "properties": {
+        "oled": {
+          "type": "object",
+          "required": ["enabled", "timeout_sec", "rotation"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "timeout_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+            "rotation": { "type": "integer", "enum": [0, 90, 180, 270] }
+          }
+        },
+        "buttons": {
+          "type": "object",
+          "required": ["long_press_ms", "actions"],
+          "properties": {
+            "long_press_ms": { "type": "integer", "minimum": 200, "maximum": 5000 },
+            "actions": {
+              "type": "object",
+              "required": ["long_press_1", "long_press_2", "long_press_3", "long_press_4"],
+              "properties": {
+                "long_press_1": { "type": "string" },
+                "long_press_2": { "type": "string" },
+                "long_press_3": { "type": "string" },
+                "long_press_4": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "homes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/home" }
+    },
+    "features": {
+      "type": "object",
+      "required": ["offline_mode", "ir_retry_count", "ir_retry_delay_ms", "crash_logging", "ota_enabled"],
+      "properties": {
+        "offline_mode": { "type": "boolean" },
+        "ir_retry_count": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "ir_retry_delay_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "crash_logging": { "type": "boolean" },
+        "ota_enabled": { "type": "boolean" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["created_at", "last_modified", "source", "checksum"],
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "last_modified": { "type": "string", "format": "date-time" },
+        "source": { "type": "string", "enum": ["local", "cloud", "import"] },
+        "checksum": { "type": "string", "pattern": "^sha256:.+" }
+      }
+    }
+  },
+  "$defs": {
+    "home": {
+      "type": "object",
+      "required": ["home_id", "name", "rooms"],
+      "properties": {
+        "home_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "rooms": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/room" }
+        }
+      }
+    },
+    "room": {
+      "type": "object",
+      "required": ["room_id", "name", "devices"],
+      "properties": {
+        "room_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "devices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/device" }
+        }
+      }
+    },
+    "device": {
+      "type": "object",
+      "required": ["device_id", "name", "type", "manufacturer", "model", "remotes"],
+      "properties": {
+        "device_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "manufacturer": { "type": "string" },
+        "model": { "type": "string" },
+        "remotes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/remote" }
+        }
+      }
+    },
+    "remote": {
+      "type": "object",
+      "required": ["remote_id", "name", "buttons"],
+      "properties": {
+        "remote_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "buttons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/button" }
+        }
+      }
+    },
+    "button": {
+      "type": "object",
+      "required": ["button_id", "label", "protocol", "address", "command", "repeat_behavior", "raw_fallback"],
+      "properties": {
+        "button_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "protocol": { "type": "string", "enum": ["NEC", "RC5", "Sony", "RAW"] },
+        "address": { "type": "string", "pattern": "^0x[0-9A-Fa-f]+$" },
+        "command": { "type": "string", "pattern": "^0x[0-9A-Fa-f]+$" },
+        "repeat_behavior": { "type": "string", "enum": ["none", "hold", "timed"] },
+        "raw_fallback": {
+          "type": "object",
+          "required": ["enabled", "hash"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "hash": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
