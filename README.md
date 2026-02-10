@@ -1,5 +1,6 @@
 # esp-ir
 
+Production-oriented ESP-IDF firmware scaffold for an ESP-based IR controller with:
 Production-oriented scaffold for an ESP-based IR controller firmware with:
 
 - Hierarchical model (`Home -> Room -> Device -> Remote -> Button`)
