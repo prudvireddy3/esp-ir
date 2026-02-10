@@ -23,7 +23,7 @@ That means installation/flashing steps below are split into:
 ### 1) Clone
 
 ```bash
-git clone <your-repo-url> esp-ir
+git clone https://github.com/prudvireddy3/esp-ir.git esp-ir
 cd esp-ir
 ```
 
