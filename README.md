@@ -1,101 +1,276 @@
+# esp-ir
 
+Production-oriented **ESP-IDF firmware scaffold** for an ESP-based IR controller.
 
-Production-oriented ESP-IDF firmware scaffold for an ESP-based IR controller with:
-Production-oriented scaffold for an ESP-based IR controller firmware with:
+Designed around strict architectural boundaries, deterministic behavior, and a single IR execution path. This is not a demo project — it is structured for real firmware deployment.
 
-- Hierarchical model (`Home -> Room -> Device -> Remote -> Button`)
-- Single trigger path (`trigger -> button_id -> IRButton -> send()`)
-- JSON config + version/migration hooks
+---
+
+# Core Design Principles
+
+- Hierarchical model  
+  `Home → Room → Device → Remote → Button`
+
+- Single trigger path  
+  `trigger → button_id → IRButton → send()`
+
+- Config-driven behavior (no hardcoded devices)
+
+- Protocol-first IR send with RAW fallback
+
 - Boot failure tracking + safe mode entry
-- Module boundaries for IR, storage, UI, network, and system reliability
 
-See `docs/architecture.md` for architecture details.
+- Clear module boundaries:
+  - `ir/`
+  - `model/`
+  - `storage/`
+  - `net/`
+  - `ui/`
+  - `system/`
 
-## Current Repository Status
+See `docs/architecture.md` for detailed architecture constraints.
 
-This repository currently provides the **firmware architecture scaffold** (models, interfaces, config schema, boot/safe-mode logic) but does **not yet include board-specific driver wiring** or a full build target (`CMakeLists.txt`, `platformio.ini`, pin map, HAL glue).
+---
 
-That means installation/flashing steps below are split into:
-1. **Host-side validation now** (works immediately).
-2. **Device flashing flow** (to use once you add board integration layer).
+# ESP-IDF Project Layout
 
-## Installation
+This repository includes a proper ESP-IDF build target:
 
-### 1) Clone
+- Root `CMakeLists.txt`
+- `main/app_main.cpp` (firmware entrypoint)
+- `components/esp_ir/CMakeLists.txt` (builds scaffold sources with C++17)
+
+Target: ESP-IDF v5.x
+
+---
+
+# Installation
+
+## 1) Clone
 
 ```bash
-git clone https://github.com/prudvireddy3/esp-ir.git esp-ir
+git clone <your-repo-url> esp-ir
 cd esp-ir
 ```
 
-### 2) Validate config artifacts (recommended now)
+---
+
+## 2) Validate Config Files
 
 ```bash
 python -m json.tool config/system_config.json >/dev/null
 python -m json.tool config/system_config.schema.json >/dev/null
 ```
 
-### 3) Toolchains for embedded deployment
+---
 
-Install one of the following:
+# ESP-IDF Environment Setup (Required Every New Terminal)
 
-- **ESP-IDF** (recommended for production ESP32 firmware)
-  - Install ESP-IDF v5.x and export environment.
-- **PlatformIO** (alternative workflow)
-  - Install PlatformIO Core or VSCode PlatformIO extension.
+You must export ESP-IDF into your shell before using `idf.py`.
 
-## Flashing Firmware (after board integration is added)
+## macOS / Linux
 
-Because this repo is scaffold-first, flashing requires a firmware entrypoint + board config to be added first.
+```bash
+. $HOME/esp-idf/export.sh
+```
 
-### Option A: ESP-IDF
+If installed elsewhere:
 
-Once `CMakeLists.txt`, `main/`, and target config are added:
+```bash
+. /path/to/esp-idf/export.sh
+```
+
+## Verify Environment
+
+```bash
+which idf.py
+idf.py --version
+```
+
+If `idf.py` is not found, the environment is not active.
+
+You must run the export script in every new terminal session.
+
+---
+
+# Target Selection (First Time Only)
 
 ```bash
 idf.py set-target esp32
+```
+
+For ESP32-S3 or C3:
+
+```bash
+idf.py set-target esp32s3
+```
+
+Changing targets later requires:
+
+```bash
+idf.py fullclean
+idf.py set-target <chip>
+```
+
+---
+
+# Project Configuration
+
+```bash
+idf.py menuconfig
+```
+
+Verify:
+
+- Partition table supports OTA (`factory` + `ota_0`)
+- Flash size matches hardware
+- LittleFS or SPIFFS enabled (if filesystem used)
+- Wi-Fi enabled
+- Task watchdog enabled
+- Correct serial port selected
+
+Save and exit.
+
+---
+
+# Build
+
+```bash
 idf.py build
+```
+
+If CMake needs refresh:
+
+```bash
+idf.py reconfigure
+```
+
+For a clean rebuild:
+
+```bash
+idf.py fullclean
+idf.py build
+```
+
+---
+
+# Flash
+
+Specify port if needed:
+
+```bash
 idf.py -p /dev/ttyUSB0 flash
 ```
 
-Monitor serial logs:
+Or auto-detect:
 
 ```bash
-idf.py -p /dev/ttyUSB0 monitor
+idf.py flash
 ```
 
-### Option B: PlatformIO
+---
 
-Once `platformio.ini` and environment are added:
+# Monitor
 
 ```bash
-pio run
-pio run -t upload
-pio device monitor -b 115200
+idf.py monitor
 ```
 
-## Running the Firmware
+Combined:
 
-After flashing a board-integrated build:
+```bash
+idf.py flash monitor
+```
 
-1. Boot device and confirm serial boot logs.
-2. Verify config load from `/config/system_config.json` equivalent in your FS image.
-3. Verify safe-mode behavior by checking boot-fail counter handling.
-4. Verify trigger flow end-to-end:
-   - physical button/UI/MQTT trigger
-   - resolves `button_id`
-   - routes through `TriggerRouter`
-   - sends via `IRSender` protocol path or RAW fallback.
-5. Verify MQTT + Home Assistant discovery (if enabled).
+Exit monitor:
 
-## Suggested bring-up checklist (next integration step)
+```
+Ctrl + ]
+```
 
-- Add board pin config (`IR TX`, optional `IR RX`, OLED, buttons, sensor bus).
-- Add deterministic scheduler loop with watchdog feed.
-- Implement concrete services for:
-  - Wi-Fi reconnect
-  - MQTT publish/discovery
-  - REST API / OTA
-  - NVS + LittleFS/SPIFFS persistence
-- Add real parser implementation in `ConfigManager` (fixed-capacity JSON parsing + schema validation policy).
-- Add integration tests for `trigger(button_id) -> send()` behavior.
+---
+
+# Filesystem & Config Requirements
+
+The firmware expects:
+
+```
+/config/system_config.json
+```
+
+to exist in the mounted filesystem at runtime.
+
+You must:
+
+- Define a `data` partition in your partition table
+- Enable LittleFS or SPIFFS
+- Ensure config files are included in the filesystem image
+
+Example partition entry:
+
+```
+data, littlefs, ...
+```
+
+Without a filesystem partition, config loading will fail.
+
+This firmware is config-driven. No config = no runtime behavior.
+
+---
+
+# Typical Development Loop
+
+```bash
+. $HOME/esp-idf/export.sh
+idf.py build
+idf.py flash monitor
+```
+
+If modifying:
+
+- Only `.cpp/.h` files → incremental build is automatic
+- `CMakeLists.txt` or component structure → run `idf.py reconfigure`
+
+---
+
+# Running / Bring-Up Checklist
+
+After flashing:
+
+1. Confirm boot log from `app_main`.
+2. Confirm boot counter increments.
+3. Verify safe-mode activation after configured failure threshold.
+4. Verify config file loads successfully.
+5. Validate single trigger path:
+   - physical button / web / MQTT trigger
+   - resolve `button_id`
+   - `TriggerRouter::triggerByButtonId()`
+   - `IRSender::sendButton()`
+   - protocol path OR RAW fallback
+6. Confirm MQTT discovery entities appear in Home Assistant (once MQTT integration is enabled).
+
+---
+
+# Current Implementation Status
+
+This repository is buildable and architecturally structured, but not fully hardware-integrated.
+
+## Implemented
+
+- ESP-IDF project structure
+- Single trigger path enforcement
+- Protocol-first IR send + RAW fallback
+- Boot failure counter + safe mode flagging
+- Config validation + migration hooks (scaffold level)
+
+## Pending Production Hardening
+
+- Deterministic JSON parsing (replace string-based validation)
+- Filesystem mounting + config materialization at boot
+- Concrete Wi-Fi / MQTT / REST / OTA services
+- Watchdog feed wiring
+- Safe-mode runtime branching
+- Production partition table
+- Board-specific pin mapping
+
+This is a firmware scaffold ready for hardening — not a finished product.
