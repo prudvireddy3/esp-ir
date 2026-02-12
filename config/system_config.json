@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "system": {
+    "device_id": "irhub-001",
+    "timezone": "Asia/Kolkata",
+    "ntp_servers": ["pool.ntp.org"],
+    "boot_fail_limit": 3,
+    "safe_mode_enabled": true
+  },
+  "network": {
+    "wifi": {
+      "ssid": "MyWiFi",
+      "password": "********",
+      "ap_disable_after_setup": true,
+      "reconnect_interval_sec": 10
+    }
+  },
+  "mqtt": {
+    "enabled": true,
+    "broker": "192.168.1.10",
+    "port": 1883,
+    "username": "mqtt_user",
+    "password": "mqtt_pass",
+    "base_topic": "irhub/irhub-001",
+    "ha_discovery": true,
+    "retain": true
+  },
+  "ui": {
+    "oled": {
+      "enabled": true,
+      "timeout_sec": 30,
+      "rotation": 0
+    },
+    "buttons": {
+      "long_press_ms": 1200,
+      "actions": {
+        "long_press_1": "enter_pairing",
+        "long_press_2": "learn_ir",
+        "long_press_3": "wifi_reset",
+        "long_press_4": "factory_reset"
+      }
+    }
+  },
+  "homes": [
+    {
+      "home_id": "home-1",
+      "name": "My Home",
+      "rooms": [
+        {
+          "room_id": "living-room",
+          "name": "Living Room",
+          "devices": [
+            {
+              "device_id": "tv-lg-01",
+              "name": "LG TV",
+              "type": "tv",
+              "manufacturer": "LG",
+              "model": "43UM7300",
+              "remotes": [
+                {
+                  "remote_id": "lg-tv-remote",
+                  "name": "Main Remote",
+                  "buttons": [
+                    {
+                      "button_id": "tv_power",
+                      "label": "Power",
+                      "protocol": "NEC",
+                      "address": "0x20DF",
+                      "command": "0x10EF",
+                      "repeat_behavior": "none",
+                      "raw_fallback": {
+                        "enabled": true,
+                        "hash": "a94a8fe5ccb19ba61c4c0873d391e987"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "features": {
+    "offline_mode": true,
+    "ir_retry_count": 2,
+    "ir_retry_delay_ms": 150,
+    "crash_logging": true,
+    "ota_enabled": true
+  },
+  "metadata": {
+    "created_at": "2026-02-01T10:30:00Z",
+    "last_modified": "2026-02-09T18:20:00Z",
+    "source": "local",
+    "checksum": "sha256:abcd1234"
+  }
+}
