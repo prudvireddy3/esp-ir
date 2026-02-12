@@ -3,7 +3,6 @@ idf_component_register(
     "../../src/model/ir_model.cpp"
     "../../src/ir/ir_sender.cpp"
     "../../src/net/trigger_router.cpp"
-    "../../src/net/network_services.cpp"
     "../../src/storage/config_manager.cpp"
     "../../src/system/boot_manager.cpp"
   INCLUDE_DIRS
