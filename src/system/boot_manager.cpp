@@ -11,6 +11,8 @@ BootState BootManager::onBootStart() {
 
   if (safe_mode_enabled_ && state.failed_boots >= boot_fail_limit_) {
     state.safe_mode = true;
+  } else if (!safe_mode_enabled_) {
+    state.safe_mode = false;
   }
 
   state_store_.save(state);
