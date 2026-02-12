@@ -2,84 +2,20 @@
 
 #ifdef ESP_PLATFORM
 
-#include <cstdio>
 #include <cstring>
 
-#include "cJSON.h"
 #include "esp_event.h"
-#include "esp_https_ota.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_netif.h"
-#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mqtt_client.h"
-#include "storage/config_manager.h"
 
 namespace esp_ir::net {
 namespace {
 constexpr const char* kTag = "esp-idf-net";
-constexpr size_t kMaxBodyBytes = 8192;
-
-struct RuntimeState {
-  std::string pending_ota_url;
-  bool learning_active{false};
-};
-
-RuntimeState& runtimeState() {
-  static RuntimeState state;
-  return state;
 }
-
-void sendJson(httpd_req_t* req, const char* payload, const char* status = "200 OK") {
-  httpd_resp_set_status(req, status);
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_send(req, payload, HTTPD_RESP_USE_STRLEN);
-}
-
-cJSON* parseJsonBody(httpd_req_t* req, std::string& raw_body) {
-  if (req == nullptr) {
-    return nullptr;
-  }
-
-  if (req->content_len <= 0 || static_cast<size_t>(req->content_len) > kMaxBodyBytes) {
-    return nullptr;
-  }
-
-  raw_body.resize(static_cast<size_t>(req->content_len));
-  int offset = 0;
-  while (offset < req->content_len) {
-    const int read_len = httpd_req_recv(req, raw_body.data() + offset, req->content_len - offset);
-    if (read_len <= 0) {
-      return nullptr;
-    }
-    offset += read_len;
-  }
-
-  return cJSON_Parse(raw_body.c_str());
-}
-
-bool readFileToString(const std::string& path, std::string& out) {
-  std::FILE* fp = std::fopen(path.c_str(), "rb");
-  if (fp == nullptr) {
-    return false;
-  }
-
-  std::fseek(fp, 0, SEEK_END);
-  const long size = std::ftell(fp);
-  std::fseek(fp, 0, SEEK_SET);
-  if (size <= 0) {
-    std::fclose(fp);
-    return false;
-  }
-
-  out.resize(static_cast<size_t>(size));
-  const size_t read_size = std::fread(out.data(), 1, out.size(), fp);
-  std::fclose(fp);
-  return read_size == out.size();
-}
-
-}  // namespace
 
 uint64_t EspMonotonicClock::nowMs() const { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
 
@@ -210,235 +146,10 @@ void EspMqttAdapter::onEvent(void* handler_args, esp_event_base_t, int32_t event
   }
 }
 
-EspRestApiAdapter* EspRestApiAdapter::fromReq(httpd_req_t* req) {
-  return (req == nullptr || req->user_ctx == nullptr) ? nullptr : static_cast<EspRestApiAdapter*>(req->user_ctx);
-}
-
-bool EspRestApiAdapter::readRequestBody(httpd_req_t* req, std::string& out) {
-  if (req == nullptr || req->content_len <= 0 || static_cast<size_t>(req->content_len) > kMaxBodyBytes) {
-    return false;
-  }
-
-  out.resize(static_cast<size_t>(req->content_len));
-  int offset = 0;
-  while (offset < req->content_len) {
-    const int read_len = httpd_req_recv(req, out.data() + offset, req->content_len - offset);
-    if (read_len <= 0) {
-      return false;
-    }
-    offset += read_len;
-  }
-
-  return true;
-}
-
-bool EspRestApiAdapter::isAuthorized(httpd_req_t* req) const {
-  if (api_token_.empty()) {
-    return true;
-  }
-
-  char header_value[128] = {0};
-  if (httpd_req_get_hdr_value_str(req, "X-API-Key", header_value, sizeof(header_value)) != ESP_OK) {
-    return false;
-  }
-
-  return api_token_ == header_value;
-}
-
 esp_err_t EspRestApiAdapter::healthHandler(httpd_req_t* req) {
-  sendJson(req, "{\"status\":\"ok\"}");
-  return ESP_OK;
-}
-
-esp_err_t EspRestApiAdapter::configGetHandler(httpd_req_t* req) {
-  auto* self = fromReq(req);
-  if (self == nullptr) {
-    sendJson(req, "{\"error\":\"adapter_context_missing\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  std::string config_text;
-  if (!readFileToString(self->config_file_path_, config_text)) {
-    sendJson(req, "{\"error\":\"config_not_found_or_invalid\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
+  static constexpr char kPayload[] = "{\"status\":\"ok\"}";
   httpd_resp_set_type(req, "application/json");
-  httpd_resp_send(req, config_text.c_str(), static_cast<ssize_t>(config_text.size()));
-  return ESP_OK;
-}
-
-esp_err_t EspRestApiAdapter::configPutHandler(httpd_req_t* req) {
-  auto* self = fromReq(req);
-  if (self == nullptr) {
-    sendJson(req, "{\"error\":\"adapter_context_missing\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  if (!self->isAuthorized(req)) {
-    sendJson(req, "{\"error\":\"unauthorized\"}", "401 Unauthorized");
-    return ESP_FAIL;
-  }
-
-  std::string payload;
-  cJSON* root = parseJsonBody(req, payload);
-  if (root == nullptr) {
-    sendJson(req, "{\"error\":\"request_body_invalid\"}", "400 Bad Request");
-    return ESP_FAIL;
-  }
-  cJSON_Delete(root);
-
-  storage::ConfigManager config_manager;
-  auto validation = config_manager.validateJsonText(payload);
-  if (!validation.ok) {
-    sendJson(req, "{\"error\":\"invalid_config\"}", "400 Bad Request");
-    return ESP_FAIL;
-  }
-
-  std::FILE* fp = std::fopen(self->config_file_path_.c_str(), "wb");
-  if (fp == nullptr) {
-    sendJson(req, "{\"error\":\"config_write_failed\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  const size_t written = std::fwrite(payload.data(), 1, payload.size(), fp);
-  std::fclose(fp);
-  if (written != payload.size()) {
-    sendJson(req, "{\"error\":\"config_write_failed\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  sendJson(req, "{\"status\":\"config_saved\"}");
-  return ESP_OK;
-}
-
-esp_err_t EspRestApiAdapter::homesGetHandler(httpd_req_t* req) {
-  auto* self = fromReq(req);
-  if (self == nullptr) {
-    sendJson(req, "{\"error\":\"adapter_context_missing\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  std::string config_text;
-  if (!readFileToString(self->config_file_path_, config_text)) {
-    sendJson(req, "{\"error\":\"config_not_found\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  storage::ConfigManager config_manager;
-  model::SystemConfig parsed;
-  if (!config_manager.parse(config_text, parsed)) {
-    sendJson(req, "{\"error\":\"config_parse_failed\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  std::string response = "{\"homes\":[";
-  for (size_t i = 0; i < parsed.homes.size(); ++i) {
-    const auto& home = parsed.homes[i];
-    response += "{\"home_id\":\"" + home.home_id + "\",\"name\":\"" + home.name + "\"}";
-    if (i + 1U < parsed.homes.size()) {
-      response += ",";
-    }
-  }
-  response += "]}";
-
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_send(req, response.c_str(), static_cast<ssize_t>(response.size()));
-  return ESP_OK;
-}
-
-esp_err_t EspRestApiAdapter::learnStartHandler(httpd_req_t* req) {
-  auto* self = fromReq(req);
-  if (self == nullptr || !self->isAuthorized(req)) {
-    sendJson(req, "{\"error\":\"unauthorized\"}", "401 Unauthorized");
-    return ESP_FAIL;
-  }
-
-  runtimeState().learning_active = true;
-  sendJson(req, "{\"status\":\"learn_started\"}");
-  return ESP_OK;
-}
-
-esp_err_t EspRestApiAdapter::learnStopHandler(httpd_req_t* req) {
-  auto* self = fromReq(req);
-  if (self == nullptr || !self->isAuthorized(req)) {
-    sendJson(req, "{\"error\":\"unauthorized\"}", "401 Unauthorized");
-    return ESP_FAIL;
-  }
-
-  runtimeState().learning_active = false;
-  sendJson(req, "{\"status\":\"learn_stopped\"}");
-  return ESP_OK;
-}
-
-esp_err_t EspRestApiAdapter::triggerHandler(httpd_req_t* req) {
-  auto* self = fromReq(req);
-  if (self == nullptr || !self->trigger_callback_) {
-    sendJson(req, "{\"error\":\"trigger_unavailable\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  if (!self->isAuthorized(req)) {
-    sendJson(req, "{\"error\":\"unauthorized\"}", "401 Unauthorized");
-    return ESP_FAIL;
-  }
-
-  std::string body;
-  cJSON* root = parseJsonBody(req, body);
-  if (root == nullptr) {
-    sendJson(req, "{\"error\":\"request_body_invalid\"}", "400 Bad Request");
-    return ESP_FAIL;
-  }
-
-  const cJSON* button_id_node = cJSON_GetObjectItemCaseSensitive(root, "button_id");
-  if (!cJSON_IsString(button_id_node) || button_id_node->valuestring == nullptr ||
-      std::strlen(button_id_node->valuestring) == 0) {
-    cJSON_Delete(root);
-    sendJson(req, "{\"error\":\"button_id_invalid\"}", "400 Bad Request");
-    return ESP_FAIL;
-  }
-
-  const std::string button_id = button_id_node->valuestring;
-  cJSON_Delete(root);
-
-  const bool sent = self->trigger_callback_(button_id);
-  sendJson(req, sent ? "{\"status\":\"sent\"}" : "{\"status\":\"not_found\"}",
-           sent ? "200 OK" : "400 Bad Request");
-  return sent ? ESP_OK : ESP_FAIL;
-}
-
-esp_err_t EspRestApiAdapter::otaStartHandler(httpd_req_t* req) {
-  auto* self = fromReq(req);
-  if (self == nullptr) {
-    sendJson(req, "{\"error\":\"adapter_context_missing\"}", "500 Internal Server Error");
-    return ESP_FAIL;
-  }
-
-  if (!self->isAuthorized(req)) {
-    sendJson(req, "{\"error\":\"unauthorized\"}", "401 Unauthorized");
-    return ESP_FAIL;
-  }
-
-  std::string body;
-  cJSON* root = parseJsonBody(req, body);
-  if (root == nullptr) {
-    sendJson(req, "{\"error\":\"request_body_invalid\"}", "400 Bad Request");
-    return ESP_FAIL;
-  }
-
-  const cJSON* url_node = cJSON_GetObjectItemCaseSensitive(root, "url");
-  if (!cJSON_IsString(url_node) || url_node->valuestring == nullptr || std::strlen(url_node->valuestring) < 8 ||
-      std::strncmp(url_node->valuestring, "https://", 8) != 0) {
-    cJSON_Delete(root);
-    sendJson(req, "{\"error\":\"url_invalid\"}", "400 Bad Request");
-    return ESP_FAIL;
-  }
-
-  runtimeState().pending_ota_url = url_node->valuestring;
-  cJSON_Delete(root);
-
-  sendJson(req, "{\"status\":\"ota_queued\"}");
-  return ESP_OK;
+  return httpd_resp_send(req, kPayload, HTTPD_RESP_USE_STRLEN);
 }
 
 void EspRestApiAdapter::start() {
@@ -452,25 +163,11 @@ void EspRestApiAdapter::start() {
     return;
   }
 
-  auto registerRoute = [this](const char* uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t*)) {
-    httpd_uri_t route{};
-    route.uri = uri;
-    route.method = method;
-    route.handler = handler;
-    route.user_ctx = this;
-    if (httpd_register_uri_handler(server_, &route) != ESP_OK) {
-      ESP_LOGW(kTag, "Failed to register route %s", uri);
-    }
-  };
-
-  registerRoute("/api/v1/health", HTTP_GET, &EspRestApiAdapter::healthHandler);
-  registerRoute("/api/v1/config", HTTP_GET, &EspRestApiAdapter::configGetHandler);
-  registerRoute("/api/v1/config", HTTP_PUT, &EspRestApiAdapter::configPutHandler);
-  registerRoute("/api/v1/homes", HTTP_GET, &EspRestApiAdapter::homesGetHandler);
-  registerRoute("/api/v1/learn/start", HTTP_POST, &EspRestApiAdapter::learnStartHandler);
-  registerRoute("/api/v1/learn/stop", HTTP_POST, &EspRestApiAdapter::learnStopHandler);
-  registerRoute("/api/v1/trigger", HTTP_POST, &EspRestApiAdapter::triggerHandler);
-  registerRoute("/api/v1/ota", HTTP_POST, &EspRestApiAdapter::otaStartHandler);
+  httpd_uri_t health{};
+  health.uri = "/api/v1/health";
+  health.method = HTTP_GET;
+  health.handler = &EspRestApiAdapter::healthHandler;
+  httpd_register_uri_handler(server_, &health);
 }
 
 void EspRestApiAdapter::poll() {}
@@ -481,29 +178,9 @@ void EspOtaAdapter::start() {
 }
 
 void EspOtaAdapter::poll() {
-  if (!initialized_ || runtimeState().pending_ota_url.empty()) {
+  if (!initialized_) {
     return;
   }
-
-  const std::string ota_url = runtimeState().pending_ota_url;
-  runtimeState().pending_ota_url.clear();
-
-  ESP_LOGI(kTag, "Starting OTA from %s", ota_url.c_str());
-  esp_http_client_config_t http_config{};
-  http_config.url = ota_url.c_str();
-  http_config.timeout_ms = 10000;
-
-  esp_https_ota_config_t ota_config{};
-  ota_config.http_config = &http_config;
-
-  const esp_err_t rc = esp_https_ota(&ota_config);
-  if (rc == ESP_OK) {
-    ESP_LOGI(kTag, "OTA successful, restarting");
-    esp_restart();
-    return;
-  }
-
-  ESP_LOGE(kTag, "OTA failed rc=%d", static_cast<int>(rc));
 }
 
 }  // namespace esp_ir::net

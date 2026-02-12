@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <string>
 
 #include "net/network_services.h"
@@ -46,35 +45,12 @@ class EspMqttAdapter final : public MQTTAdapter {
 
 class EspRestApiAdapter final : public RestApiAdapter {
  public:
-  using TriggerCallback = std::function<bool(const std::string&)>;
-
-  explicit EspRestApiAdapter(std::string config_file_path = "/config/system_config.json",
-                             std::string api_token = "change-me")
-      : config_file_path_(std::move(config_file_path)), api_token_(std::move(api_token)) {}
-
-  void setTriggerCallback(TriggerCallback callback) { trigger_callback_ = std::move(callback); }
-
   void start() override;
   void poll() override;
 
  private:
   static esp_err_t healthHandler(httpd_req_t* req);
-  static esp_err_t configGetHandler(httpd_req_t* req);
-  static esp_err_t configPutHandler(httpd_req_t* req);
-  static esp_err_t homesGetHandler(httpd_req_t* req);
-  static esp_err_t learnStartHandler(httpd_req_t* req);
-  static esp_err_t learnStopHandler(httpd_req_t* req);
-  static esp_err_t triggerHandler(httpd_req_t* req);
-  static esp_err_t otaStartHandler(httpd_req_t* req);
 
-  static EspRestApiAdapter* fromReq(httpd_req_t* req);
-  static bool readRequestBody(httpd_req_t* req, std::string& out);
-
-  bool isAuthorized(httpd_req_t* req) const;
-
-  std::string config_file_path_;
-  std::string api_token_;
-  TriggerCallback trigger_callback_;
   httpd_handle_t server_{nullptr};
 };
 
