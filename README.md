@@ -1,31 +1,4 @@
-# esp-ir
 
-Production-oriented ESP-IDF firmware scaffold for an ESP-based IR controller with:
-
-- Hierarchical model (`Home -> Room -> Device -> Remote -> Button`)
-- Single trigger path (`trigger -> button_id -> IRButton -> send()`)
-- JSON config + version/migration hooks
-- Boot failure tracking + safe mode entry
-- Module boundaries for IR, storage, UI, network, and system reliability
-
-See `docs/architecture.md` for architecture details.
-
-## ESP-IDF Project Layout
-
-This repository now includes an ESP-IDF build target:
-
-- Root `CMakeLists.txt`
-- `main/app_main.cpp`
-- `components/esp_ir/CMakeLists.txt` that compiles core scaffold sources
-
-## Installation
-
-### 1) Clone
-Production-oriented **ESP-IDF firmware scaffold** for an ESP-based IR controller.
-
-Designed around strict architectural boundaries, deterministic behavior, and a single IR execution path. This is not a demo project — it is structured for real firmware deployment.
-
----
 
 # Core Design Principles
 
@@ -70,7 +43,7 @@ Target: ESP-IDF v5.x
 ## 1) Clone
 
 ```bash
-git clone <your-repo-url> esp-ir
+git clone https://github.com/prudvireddy3/esp-ir.git esp-ir
 cd esp-ir
 ```
 
